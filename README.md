@@ -36,6 +36,8 @@ This project showcases how to deploy the [OpenTelemetry Demo](https://github.com
 
 ## Repository Structure
 
+<details>
+<summary>Repository Structure</summary>
 .
 ├── CloudFormation Templates/
 │   ├── 1_vpc_template.yaml
@@ -60,6 +62,7 @@ This project showcases how to deploy the [OpenTelemetry Demo](https://github.com
 ├── Dockerfile                                  # For building custom images
 ├── README.md                                   # (This file)
 └── ...
+</details>
 
 - **CloudFormation Templates/**: Templates for VPC, security groups, EKS cluster, node groups, and an EC2 bastion/client instance.
 - **Kubernetes/monolithic_opentelemetry_demo.yaml**: The original single YAML deployment for the OpenTelemetry demo.
