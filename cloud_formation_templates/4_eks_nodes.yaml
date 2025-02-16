@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Managed Node Group for Amazon EKS with IAM Role Creation
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: Name of the EKS Cluster.
+
+  PublicSubnets:
+    Type: CommaDelimitedList
+    Description: List of public subnets for the worker nodes.
+
+  NodeSecurityGroupId:
+    Type: String
+    Description: Security group ID for the worker nodes.
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing KeyPair to enable SSH access.
+
+Resources:
+  NodeInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+      Tags:
+        - Key: Name
+          Value: eks-worker-node-role
+
+  NodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref NodeInstanceRole
+
+  NodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref ClusterName
+      NodeRole: !GetAtt NodeInstanceRole.Arn
+      Subnets: !Ref PublicSubnets
+      ScalingConfig:
+        MinSize: 2
+        MaxSize: 5
+        DesiredSize: 2
+      InstanceTypes:
+        - t3.large
+      AmiType: AL2_x86_64
+      RemoteAccess:
+        Ec2SshKey: !Ref KeyName
+        SourceSecurityGroups:
+          - !Ref NodeSecurityGroupId
+      Tags: # Corrected: JSON object format
+        Project: otel-demo
+        Environment: production
+
+Outputs:
+  NodeGroupName:
+    Description: Name of the Node Group
+    Value: !Ref NodeGroup
+
+  NodeRoleArn:
+    Description: ARN of the IAM Role for Worker Nodes
+    Value: !GetAtt NodeInstanceRole.Arn

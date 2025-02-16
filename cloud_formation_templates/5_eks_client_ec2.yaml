@@ -1,0 +1,143 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: EC2 instance setup for EKS client with IAM Role and pre-installed tools (kubectl, aws-cli, eksctl)
+
+Parameters:
+  VpcId:
+    Type: String
+    Description: VPC ID where the EC2 instance will be deployed.
+
+  PublicSubnet:
+    Type: String
+    Description: Subnet ID for the public subnet where the EC2 instance will be launched.
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing KeyPair to enable SSH access.
+
+  InstanceType:
+    Type: String
+    Default: t3.medium
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+      - t3.small
+      - t3.medium
+    Description: EC2 instance type for the EKS client.
+
+  ClusterName:
+    Type: String
+    Description: Name of the EKS cluster to manage.
+
+  Region:
+    Type: String
+    Default: us-east-1
+    Description: AWS region where the EKS cluster is deployed.
+
+Resources:
+  EksClientRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess  # Optional if S3 access is required
+      Tags:
+        - Key: Name
+          Value: eks-client-role
+
+  EksClientInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EksClientRole
+
+  EksClientSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for EKS client instance.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0  # Adjust for restricted access in production
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: eks-client-sg
+
+  EksClientInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref EksClientSecurityGroup
+      IamInstanceProfile: !Ref EksClientInstanceProfile
+      ImageId: ami-0915bcb5fa77e4892  # Amazon Linux 2 AMI (ensure this matches your region)
+      Tags:
+        - Key: Name
+          Value: eks-client-instance
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update the system
+          yum update -y
+
+          # Install AWS CLI v2
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install
+
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin
+
+          # Install eksctl
+          curl -sLO "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz"
+          tar -xzf eksctl_Linux_amd64.tar.gz
+          sudo mv eksctl /usr/local/bin
+
+          # Update kubeconfig for kubectl
+          # aws eks update-kubeconfig --region ${Region} --name ${ClusterName}
+          aws eks update-kubeconfig --region ${Region} --name ${ClusterName} --kubeconfig /home/ec2-user/.kube/config
+          sudo chown ec2-user:ec2-user /home/ec2-user/.kube/config
+
+          # Set up the environment
+          echo 'export PATH=$PATH:/usr/local/bin' >> /etc/profile
+          echo "EKS Client setup complete."
+
+Outputs:
+  EksClientInstanceId:
+    Description: Instance ID of the EKS Client
+    Value: !Ref EksClientInstance
+
+  EksClientPublicIp:
+    Description: Public IP of the EKS Client
+    Value: !GetAtt EksClientInstance.PublicIp
+
+  EksClientSecurityGroupId:
+    Description: Security Group ID for the EKS Client instance
+    Value: !Ref EksClientSecurityGroup

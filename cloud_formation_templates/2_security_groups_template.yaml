@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Security Groups for EKS Cluster and Worker Nodes, aligned with VPC structure
+
+Parameters:
+  VpcId:
+    Type: String
+    Description: VPC ID where the security groups will be created.
+
+  VpcCidrBlock:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block of the VPC
+
+Resources:
+  ClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EKS Cluster security group to allow API access.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0  # Update for restricted API access in production
+      Tags:
+        - Key: Name
+          Value: otel-demo-cluster-sg
+
+  NodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Worker node security group to allow cluster communication.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        # Allow worker node communication with the control plane
+        - IpProtocol: tcp
+          FromPort: 1025
+          ToPort: 65535
+          SourceSecurityGroupId: !Ref ClusterSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref ClusterSecurityGroup
+
+        # Allow internal communication within worker nodes (private subnets)
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref VpcCidrBlock
+      Tags:
+        - Key: Name
+          Value: otel-demo-node-sg
+
+Outputs:
+  ClusterSecurityGroupId:
+    Description: Security Group ID for the EKS Cluster
+    Value: !Ref ClusterSecurityGroup
+
+  NodeSecurityGroupId:
+    Description: Security Group ID for the Worker Nodes
+    Value: !Ref NodeSecurityGroup
